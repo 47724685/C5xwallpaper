@@ -72,7 +72,8 @@ class WallpaperPickerActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             onItemClickListener = AdapterView.OnItemClickListener { _, _, pos, _ ->
                 selectedBuiltinIndex = pos; pendingCustomPath = null
-                adapter.notifyDataSetChanged(); confirmBtn.isEnabled = true
+                confirmBtn.isEnabled = true
+                (getAdapter() as? WallpaperGridAdapter)?.notifyDataSetChanged()
             }
         }
         root.addView(gridView, LinearLayout.LayoutParams(
