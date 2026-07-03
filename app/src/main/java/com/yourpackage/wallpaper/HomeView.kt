@@ -273,8 +273,9 @@ class HomeView(context: Context) : View(context) {
                 val dp = Paint().apply { color = Color.argb(50,255,255,255); strokeWidth = dy(1f) }
                 canvas.drawLine(slotLeft, slotTop+dy(10f), slotLeft, slotBot-dy(10f), dp)
             }
-            val iconSize = dy(64f)
-            val iconTop = slotTop + dy(12f)
+            val iconSize = dy(52f)
+            val slotH    = slotBot - slotTop
+            val iconTop  = slotTop + (slotH - iconSize - dy(16f)) / 2f
             val iconLeft = slotCX - iconSize / 2f
             val icon = app.icon
             if (icon != null) {

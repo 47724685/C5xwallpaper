@@ -2,10 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.yourpackage.wallpaper">
 
+    <!-- 基础权限 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+    <uses-permission android:name="android.permission.GET_TASKS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- priv-app 特权权限：放进 /system/priv-app/ 后自动授予 -->
+    <uses-permission android:name="android.permission.INJECT_EVENTS" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
     <uses-sdk
         android:minSdkVersion="19"
@@ -20,11 +28,7 @@
         android:largeHeap="true"
         android:theme="@style/AppTheme">
 
-        <!--
-            这个 Activity 同时声明了 HOME + LAUNCHER category
-            意思是：安装后，按下 Home 键时系统会问"选择桌面"，选这个就成为默认桌面
-            同时也能从应用列表里单独打开，不强制替换原来的 launcher
-        -->
+        <!-- 桌面主界面 -->
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTask"
@@ -41,13 +45,27 @@
             </intent-filter>
         </activity>
 
-        <!-- 壁纸选择界面，单独 Activity 避免影响桌面主 Activity 的生命周期 -->
+        <!-- 壁纸选择界面 -->
         <activity
             android:name=".WallpaperPickerActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:theme="@style/PickerTheme"
             android:exported="false" />
+
+        <!-- 悬浮球 Service -->
+        <service
+            android:name=".FloatBallService"
+            android:exported="false" />
+
+        <!-- 开机自启 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
