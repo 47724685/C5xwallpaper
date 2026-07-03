@@ -27,18 +27,24 @@ jobs:
             "https://github.com/gradle/gradle/raw/v7.5.0/gradle/wrapper/gradle-wrapper.jar" \
             -o gradle/wrapper/gradle-wrapper.jar
 
-      # 双保险：chmod + git update-index，确保 gradlew 有执行权限
       - name: Grant gradlew permission
         run: |
           chmod +x gradlew
           git update-index --chmod=+x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -200
+        run: ./gradlew assembleDebug --stacktrace
+
+      # 找出实际生成的APK路径
+      - name: Find APK
+        run: find . -name "*.apk" | tee apk_paths.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: wallpaper-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/**/*.apk
+          if-no-files-found: warn
           retention-days: 30
