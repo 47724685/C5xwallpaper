@@ -1,0 +1,72 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:          # 支持手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 配置 JDK（Android Gradle Plugin 7.x 需要 JDK 11）
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: gradle          # 缓存 gradle 依赖，加快后续构建
+
+      # 3. 下载 gradle wrapper jar（项目里不提交二进制 jar，Actions 里动态下载）
+      - name: Download Gradle Wrapper JAR
+        run: |
+          mkdir -p gradle/wrapper
+          curl -sL \
+            "https://github.com/gradle/gradle/raw/v7.5.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
+
+      # 4. 给 gradlew 加执行权限
+      - name: Grant gradlew permission
+        run: chmod +x gradlew
+
+      # 5. 编译 debug APK（不需要签名 keystore，可直接安装到 adb 设备）
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      # 6. 上传 APK 产物（在 Actions → 对应 workflow run → Artifacts 下载）
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallpaper-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30    # 产物保留30天
+
+      # 7. （可选）如果你配置了签名 secrets，同时编译 release APK
+      #    在 GitHub 仓库 Settings → Secrets 里添加以下4个 secret 后取消注释：
+      #    KEYSTORE_BASE64  MY_KEY_ALIAS  MY_KEY_PASSWORD  MY_STORE_PASSWORD
+      #
+      # - name: Build Release APK
+      #   env:
+      #     KEYSTORE_BASE64:    ${{ secrets.KEYSTORE_BASE64 }}
+      #     KEY_ALIAS:          ${{ secrets.MY_KEY_ALIAS }}
+      #     KEY_PASSWORD:       ${{ secrets.MY_KEY_PASSWORD }}
+      #     STORE_PASSWORD:     ${{ secrets.MY_STORE_PASSWORD }}
+      #   run: |
+      #     echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+      #     ./gradlew assembleRelease \
+      #       -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
+      #       -Pandroid.injected.signing.store.password=$STORE_PASSWORD \
+      #       -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+      #       -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+      #
+      # - name: Upload Release APK
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: wallpaper-release-apk
+      #     path: app/build/outputs/apk/release/*.apk
+      #     retention-days: 30
