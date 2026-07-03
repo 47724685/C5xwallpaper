@@ -1,8 +1,8 @@
 package com.yourpackage.wallpaper
 
-import android.app.Application
+import androidx.multidex.MultiDexApplication
 
-class WallpaperApp : Application() {
+class WallpaperApp : MultiDexApplication() {
     override fun onCreate() {
         super.onCreate()
     }
