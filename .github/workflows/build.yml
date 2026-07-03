@@ -33,18 +33,30 @@ jobs:
           git update-index --chmod=+x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          ./gradlew assembleDebug --info 2>&1 | tee build_log.txt
+          exit ${PIPESTATUS[0]}
 
-      # 找出实际生成的APK路径
-      - name: Find APK
-        run: find . -name "*.apk" | tee apk_paths.txt
+      - name: Show Kotlin errors if failed
+        if: failure()
+        run: |
+          echo "=== Kotlin编译错误 ==="
+          grep -E "error:|\.kt:[0-9]+" build_log.txt | head -80 || true
+          echo "=== 完整日志末尾200行 ==="
+          tail -200 build_log.txt || true
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: wallpaper-debug-apk
-          path: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/**/*.apk
-          if-no-files-found: warn
+          path: app/build/outputs/apk/**/*.apk
           retention-days: 30
+
+      - name: Upload build log if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build_log.txt
+          retention-days: 7
