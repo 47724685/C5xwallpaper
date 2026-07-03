@@ -13,34 +13,23 @@ android {
         targetSdkVersion 19
         versionCode 1
         versionName "1.0"
-        multiDexEnabled false
     }
 
     buildTypes {
-        debug {
-            minifyEnabled false
-            // D8 脱糖：把 invoke-custom 转换成 minApi 19 兼容的字节码
-            // 不开这个，Kotlin lambda 在 API 19 上会报 invoke-customs 错误
-        }
-        release {
-            minifyEnabled false
-        }
+        release { minifyEnabled false }
+        debug   { minifyEnabled false }
     }
 
     compileOptions {
-        // 开启 Java 8 语言特性脱糖（coreLibraryDesugaring）
-        // 注意：只用 sourceCompatibility 1.7 反而会触发 invoke-custom 问题
-        // 正确做法是用 1.8 + isCoreLibraryDesugaringEnabled
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
-        isCoreLibraryDesugaringEnabled true
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
         jvmTarget = '1.8'
     }
 
-    // 防止重复文件打包报错
     packagingOptions {
         exclude 'META-INF/DEPENDENCIES'
         exclude 'META-INF/LICENSE'
@@ -49,7 +38,6 @@ android {
 }
 
 dependencies {
-    // 脱糖库：把 Java 8+ API 转换成 API 19 可用的字节码
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:1.2.3'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
 }
