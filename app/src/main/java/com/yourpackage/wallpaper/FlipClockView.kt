@@ -102,21 +102,25 @@ class FlipClockView(context: Context) : View(context) {
         val botLabel = if (prog < 0.5f) prev else cur
         drawBottom(canvas, botLabel, x, y)
 
-        // ─── 上半（静态，始终是 cur）──────────────────────────────────────────
-        drawTop(canvas, cur, x, y)
+        // ─── 上半静态 ─────────────────────────────────────────────────────────
+        // 翻转进行时（prog>0）上半完全交给翻转层绘制，静态层隐藏
+        // 翻转结束后（prog==0）才显示静态 cur
+        if (prog <= 0f) {
+            drawTop(canvas, cur, x, y)
+        }
 
         // ─── 分割线 ───────────────────────────────────────────────────────────
         canvas.drawRect(x, y + halfH - 3f, x + cardW, y + halfH + 3f, divPaint)
 
         if (prog <= 0f) return
 
-        // ─── 翻转层 ───────────────────────────────────────────────────────────
+        // ─── 翻转层（完全接管上半的绘制） ─────────────────────────────────────
         if (prog < 0.5f) {
-            // 前半程：prev 的上半从 0°→90° 翻走
+            // 前半程：prev 上半从 0°→90° 翻走
             val angle = (prog / 0.5f) * 90f
             drawFlippingTop(canvas, prev, x, y, angle)
         } else {
-            // 后半程：cur 的上半从 90°→0° 翻进来
+            // 后半程：cur 上半从 90°→0° 翻进来
             val angle = ((1f - prog) / 0.5f) * 90f
             drawFlippingTop(canvas, cur, x, y, angle)
         }
@@ -154,7 +158,8 @@ class FlipClockView(context: Context) : View(context) {
      * pivot 点 = 卡片分割线中心（x + cardW/2, y + halfH）
      */
     private fun drawFlippingTop(canvas: Canvas, label: String,
-                                 x: Float, y: Float, angle: Float) {
+                                 x: Float, y: Float, angle: Float,
+                                 bgColor: Int = C_TOP) {
         val halfH = cardH / 2f
         val bw = cardW.toInt().coerceAtLeast(1)
         val bh = halfH.toInt().coerceAtLeast(1)
@@ -166,7 +171,7 @@ class FlipClockView(context: Context) : View(context) {
         // 背景：画整张卡片（origin 偏移到 bitmap 坐标）再裁上半
         bc.save()
         bc.clipRect(0f, 0f, cardW, halfH)
-        bgPaint.color = C_TOP
+        bgPaint.color = bgColor
         bc.drawRoundRect(RectF(0f, 0f, cardW, cardH), cr, cr, bgPaint)
         bc.restore()
 
