@@ -62,7 +62,7 @@ class HomeView(context: Context) : View(context) {
         override fun run() {
             flipClock.tick()
             invalidate()
-            handler.postDelayed(this, 1000)
+            handler.postDelayed(this, 100)   // 100ms轮询，保证秒变化时动画不晚于100ms
         }
     }
 
@@ -248,12 +248,12 @@ class HomeView(context: Context) : View(context) {
     /** 把 FlipClockView 的内容绘制到中央区域 */
     private fun drawFlipClock(canvas: Canvas) {
         val clockTop = dy(STATUS_H)
-        val clockBot = dy(DOCK_TOP)
+        // 底部留出日期文字高度（约30px设计坐标）和Dock间距
+        val clockBot = dy(DOCK_TOP) - dy(36f)
+        val w = width
+        val h = (clockBot - clockTop).toInt().coerceAtLeast(1)
         canvas.save()
         canvas.translate(0f, clockTop)
-        // 临时设置flipClock尺寸让它知道自己的边界
-        val w = width
-        val h = (clockBot - clockTop).toInt()
         if (flipClock.width != w || flipClock.height != h) {
             flipClock.measure(
                 MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
