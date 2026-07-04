@@ -75,21 +75,48 @@ class HomeView(context: Context) : View(context) {
     private fun loadDockApps() {
         dockApps.clear()
         val pm = context.packageManager
+
+        // 优先匹配的包名列表
         val slots = listOf(
-            "NAV"   to listOf("com.autonavi.amapauto","com.baidu.BaiduMap","com.autonavi.miniinternational"),
-            "MUSIC" to listOf("com.hsae.d531mc.music","com.android.music","com.netease.cloudmusic"),
-            "A/C"   to listOf("com.hsae.d531mc.ac","com.hsae.car.ac","com.hsae.auto.ac"),
-            "CAR"   to listOf("com.hsae.d531mc.carinfo","com.hsae.car","com.hsae.auto"),
-            "SET"   to listOf("com.android.settings","com.hsae.d531mc.settings"),
-            "APP"   to emptyList()
+            "导航"  to listOf("com.autonavi.amapauto","com.baidu.BaiduMap","com.autonavi.miniinternational","com.autonavi.map"),
+            "音乐"  to listOf("com.hsae.d531mc.music","com.android.music","com.netease.cloudmusic","com.kugou.android"),
+            "空调"  to listOf("com.hsae.d531mc.ac","com.hsae.car.ac","com.hsae.auto.ac","com.hsae.ac"),
+            "车辆"  to listOf("com.hsae.d531mc.carinfo","com.hsae.car","com.hsae.auto","com.hsae.carinfo"),
+            "设置"  to listOf("com.android.settings","com.hsae.d531mc.settings"),
+            "应用"  to emptyList()
         )
+
+        // 获取系统所有可启动App（用于兜底）
+        val launchIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        }
+        val allApps = pm.queryIntentActivities(launchIntent, 0)
+            .filter { it.activityInfo.packageName != context.packageName }
+            .sortedBy { it.loadLabel(pm).toString() }
+
+        var fallbackIdx = 0  // 兜底App轮流填充
+
         for ((label, pkgs) in slots) {
-            if (label == "APP") { dockApps.add(DockApp("APP","__all__",null)); continue }
+            if (label == "应用") { dockApps.add(DockApp("应用","__all__",null)); continue }
+            // 先找指定包名
             val found = pkgs.firstOrNull { pkg ->
                 try { pm.getApplicationInfo(pkg, 0); true } catch (e: Exception) { false }
             }
-            val icon = found?.let { try { pm.getApplicationIcon(it) } catch (e: Exception) { null } }
-            dockApps.add(DockApp(label, found ?: "", icon))
+            if (found != null) {
+                val icon = try { pm.getApplicationIcon(found) } catch (e: Exception) { null }
+                dockApps.add(DockApp(label, found, icon))
+            } else {
+                // 指定包名找不到，从系统App列表取一个兜底
+                val fallback = allApps.getOrNull(fallbackIdx++)
+                if (fallback != null) {
+                    val pkg  = fallback.activityInfo.packageName
+                    val lbl  = fallback.loadLabel(pm).toString().take(4)
+                    val icon = try { pm.getApplicationIcon(pkg) } catch (e: Exception) { null }
+                    dockApps.add(DockApp(lbl, pkg, icon))
+                } else {
+                    dockApps.add(DockApp(label, "", null))
+                }
+            }
         }
     }
 

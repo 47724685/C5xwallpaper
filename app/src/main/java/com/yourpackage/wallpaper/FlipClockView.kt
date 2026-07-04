@@ -15,26 +15,27 @@ class FlipClockView(context: Context) : View(context) {
     private val animators = arrayOfNulls<ValueAnimator>(3)
     private var initialized = false
 
-    private var cardW  = 0f
-    private var cardH  = 0f
-    private var halfH  = 0f
-    private var gap    = 0f
-    private var cr     = 0f
-
-    private val C_TOP = Color.rgb(44, 44, 44)
-    private val C_BOT = Color.rgb(33, 33, 33)
-    private val C_DIV = Color.rgb(10, 10, 10)
-    private val C_TXT = Color.rgb(200, 200, 200)
+    // 运行时计算的尺寸
+    private var cardW = 0f
+    private var cardH = 0f
+    private var gap   = 0f
+    private var cr    = 0f
 
     private val bgPaint  = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val divPaint = Paint().apply { color = Color.rgb(10,10,10) }
     private val txtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color     = Color.rgb(200, 200, 200)
         textAlign = Paint.Align.CENTER
         typeface  = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
     }
-    private val camera = Camera()
-    private val mtx    = Matrix()
+    private val divPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+    }
+
+    private val C_TOP = Color.argb(180, 48, 48, 48)
+    private val C_BOT = Color.argb(160, 36, 36, 36)
+
+    // 预计算文字基线（相对于卡片顶部）
+    private var textBaseline = 0f
 
     fun tick() {
         val cal = Calendar.getInstance()
@@ -49,7 +50,9 @@ class FlipClockView(context: Context) : View(context) {
         }
         for (i in 0..2) {
             if (nv[i] != curVal[i]) {
-                prevVal[i] = curVal[i]; curVal[i] = nv[i]; startFlip(i)
+                prevVal[i] = curVal[i]
+                curVal[i]  = nv[i]
+                startFlip(i)
             }
         }
     }
@@ -58,7 +61,7 @@ class FlipClockView(context: Context) : View(context) {
         animators[i]?.cancel()
         ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 500
-            interpolator = DecelerateInterpolator(1.5f)
+            interpolator = DecelerateInterpolator(1.2f)
             addUpdateListener { flipProg[i] = it.animatedValue as Float; invalidate() }
             animators[i] = this; start()
         }
@@ -68,10 +71,14 @@ class FlipClockView(context: Context) : View(context) {
         super.onSizeChanged(w, h, ow, oh)
         cardH = h * 0.80f
         cardW = cardH * 0.88f
-        halfH = cardH / 2f
         gap   = h * 0.05f
         cr    = cardH * 0.08f
-        txtPaint.textSize = cardH * 0.58f
+        txtPaint.textSize = cardH * 0.56f
+
+        // 预计算：文字垂直居中于整张卡片的基线
+        // baseline = cardH/2 + 文字高度/2（精确用FontMetrics）
+        val fm = txtPaint.fontMetrics
+        textBaseline = cardH / 2f - (fm.ascent + fm.descent) / 2f
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -79,108 +86,115 @@ class FlipClockView(context: Context) : View(context) {
         val totalW = cardW * 3 + gap * 2
         val ox = (width  - totalW) / 2f
         val oy = (height - cardH)  / 2f
-        for (i in 0..2) drawCard(canvas, ox + i * (cardW + gap), oy, i)
+        for (i in 0..2) {
+            drawCard(canvas, ox + i * (cardW + gap), oy, i)
+        }
     }
 
     private fun drawCard(canvas: Canvas, x: Float, y: Float, idx: Int) {
-        val prog = flipProg[idx]
-        val cur  = "%02d".format(curVal[idx])
-        val prev = "%02d".format(prevVal[idx])
+        val prog  = flipProg[idx]
+        val cur   = "%02d".format(curVal[idx])
+        val prev  = "%02d".format(prevVal[idx])
+        val halfH = cardH / 2f
 
-        // 1. 下半静态（前半程=prev，后半程=cur）
+        // ─── 下半（静态）───────────────────────────────────────────────────────
+        // 前半程显示 prev 的下半，后半程显示 cur 的下半
         val botLabel = if (prog < 0.5f) prev else cur
-        drawStaticHalf(canvas, botLabel, x, y, isTop = false, C_BOT)
+        drawBottom(canvas, botLabel, x, y)
 
-        // 2. 上半静态（始终=cur）
-        drawStaticHalf(canvas, cur, x, y, isTop = true, C_TOP)
+        // ─── 上半（静态，始终是 cur）──────────────────────────────────────────
+        drawTop(canvas, cur, x, y)
 
-        // 3. 分割线
-        canvas.drawRect(x, y+halfH-2f, x+cardW, y+halfH+2f, divPaint)
+        // ─── 分割线 ───────────────────────────────────────────────────────────
+        canvas.drawRect(x, y + halfH - 3f, x + cardW, y + halfH + 3f, divPaint)
 
         if (prog <= 0f) return
 
-        // 4. 翻转层（只影响上半区域）
-        canvas.save()
-        canvas.clipRect(x, y, x+cardW, y+halfH)
+        // ─── 翻转层 ───────────────────────────────────────────────────────────
         if (prog < 0.5f) {
-            // prev 上半翻走：0°→90°
-            drawFlipHalf(canvas, prev, x, y, prog / 0.5f * 90f)
+            // 前半程：prev 的上半从 0°→90° 翻走
+            val angle = (prog / 0.5f) * 90f
+            drawFlippingTop(canvas, prev, x, y, angle)
         } else {
-            // cur 上半翻进来：90°→0°
-            drawFlipHalf(canvas, cur, x, y, (1f - prog) / 0.5f * 90f)
+            // 后半程：cur 的上半从 90°→0° 翻进来
+            val angle = ((1f - prog) / 0.5f) * 90f
+            drawFlippingTop(canvas, cur, x, y, angle)
         }
+    }
+
+    /** 绘制卡片上半（裁剪到上半区域） */
+    private fun drawTop(canvas: Canvas, label: String, x: Float, y: Float) {
+        val halfH = cardH / 2f
+        canvas.save()
+        canvas.clipRect(x, y, x + cardW, y + halfH)
+        // 整张卡片背景（圆角在上）
+        bgPaint.color = C_TOP
+        canvas.drawRoundRect(RectF(x, y, x + cardW, y + cardH), cr, cr, bgPaint)
+        // 文字：基线是相对于卡片顶部的 textBaseline
+        canvas.drawText(label, x + cardW / 2f, y + textBaseline, txtPaint)
+        canvas.restore()
+    }
+
+    /** 绘制卡片下半（裁剪到下半区域） */
+    private fun drawBottom(canvas: Canvas, label: String, x: Float, y: Float) {
+        val halfH = cardH / 2f
+        canvas.save()
+        canvas.clipRect(x, y + halfH, x + cardW, y + cardH)
+        // 整张卡片背景（圆角在下）
+        bgPaint.color = C_BOT
+        canvas.drawRoundRect(RectF(x, y, x + cardW, y + cardH), cr, cr, bgPaint)
+        // 文字：同样基线，与上半对齐
+        canvas.drawText(label, x + cardW / 2f, y + textBaseline, txtPaint)
         canvas.restore()
     }
 
     /**
-     * 绘制静态的上半或下半
-     * 关键：文字在整张卡片垂直居中，上下各显示一半
+     * 绘制翻转中的上半
+     * 原理：先把上半内容画到离屏 Bitmap，再用 Camera 做 3D 旋转后贴回
+     * pivot 点 = 卡片分割线中心（x + cardW/2, y + halfH）
      */
-    private fun drawStaticHalf(canvas: Canvas, label: String,
-                                x: Float, y: Float, isTop: Boolean, bgColor: Int) {
+    private fun drawFlippingTop(canvas: Canvas, label: String,
+                                 x: Float, y: Float, angle: Float) {
+        val halfH = cardH / 2f
         val bw = cardW.toInt().coerceAtLeast(1)
         val bh = halfH.toInt().coerceAtLeast(1)
 
-        // 用整张卡片高度绘制 bitmap，再 crop 上半或下半
-        val fullBmp = Bitmap.createBitmap(bw, cardH.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
-        val fc = Canvas(fullBmp)
+        // 离屏绘制上半内容（坐标系原点在上半左上角）
+        val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+        val bc  = Canvas(bmp)
 
-        // 背景
-        bgPaint.color = bgColor
-        fc.drawRoundRect(RectF(0f, 0f, cardW, cardH), cr, cr, bgPaint)
-
-        // 文字垂直居中在整张卡片
-        val bounds = Rect()
-        txtPaint.getTextBounds(label, 0, label.length, bounds)
-        val textY = cardH / 2f - bounds.exactCenterY()
-        fc.drawText(label, cardW / 2f, textY, txtPaint)
-
-        // crop 上半或下半
-        val srcY = if (isTop) 0 else bh
-        val cropped = Bitmap.createBitmap(fullBmp, 0, srcY, bw, bh)
-        fullBmp.recycle()
-
-        val destY = if (isTop) y else y + halfH
-        canvas.drawBitmap(cropped, x, destY, null)
-        cropped.recycle()
-    }
-
-    /**
-     * 3D 翻转中的上半
-     * pivot = 卡片上半底边中心（即分割线处）
-     * angle 0°=正面 90°=侧面消失
-     */
-    private fun drawFlipHalf(canvas: Canvas, label: String,
-                              x: Float, y: Float, angle: Float) {
-        val bw = cardW.toInt().coerceAtLeast(1)
-        val bh = halfH.toInt().coerceAtLeast(1)
-
-        // 同样用整张卡片绘制再 crop 上半
-        val fullBmp = Bitmap.createBitmap(bw, cardH.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
-        val fc = Canvas(fullBmp)
+        // 背景：画整张卡片（origin 偏移到 bitmap 坐标）再裁上半
+        bc.save()
+        bc.clipRect(0f, 0f, cardW, halfH)
         bgPaint.color = C_TOP
-        fc.drawRoundRect(RectF(0f, 0f, cardW, cardH), cr, cr, bgPaint)
-        val bounds = Rect()
-        txtPaint.getTextBounds(label, 0, label.length, bounds)
-        val textY = cardH / 2f - bounds.exactCenterY()
-        fc.drawText(label, cardW / 2f, textY, txtPaint)
-        val halfBmp = Bitmap.createBitmap(fullBmp, 0, 0, bw, bh)
-        fullBmp.recycle()
+        bc.drawRoundRect(RectF(0f, 0f, cardW, cardH), cr, cr, bgPaint)
+        bc.restore()
 
-        // Camera 绕 bitmap 底边（pivot = 底边中心）旋转
-        camera.save()
-        camera.rotateX(angle)
-        camera.getMatrix(mtx)
-        camera.restore()
+        // 文字基线相对于 bitmap 顶部（= textBaseline，因为 bitmap 顶部对应卡片顶部）
+        bc.drawText(label, cardW / 2f, textBaseline, txtPaint)
 
-        // preTranslate：把 pivot(bw/2, bh) 移到原点
-        // postTranslate：把原点移回屏幕上的 pivot 位置(x+cardW/2, y+halfH)
-        mtx.preTranslate(-cardW / 2f, -halfH)
-        mtx.postTranslate(x + cardW / 2f, y + halfH)
+        // Camera 3D 旋转，pivot = bitmap 底边中心 (cardW/2, halfH)
+        val cam = Camera()
+        cam.save()
+        cam.rotateX(angle)
+        val m = Matrix()
+        cam.getMatrix(m)
+        cam.restore()
+
+        // 把 pivot 从 bitmap 底边中心变换到屏幕坐标
+        m.preTranslate(-cardW / 2f, -halfH)   // 平移到原点
+        m.postTranslate(x + cardW / 2f, y + halfH)  // 平移到屏幕 pivot
+
+        // 只在上半区域内绘制（防止翻转时溢出到下半）
+        canvas.save()
+        canvas.clipRect(x, y, x + cardW, y + halfH)
 
         val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        p.alpha = (255 * (1f - angle / 90f * 0.4f)).toInt().coerceIn(0, 255)
-        canvas.drawBitmap(halfBmp, mtx, p)
-        halfBmp.recycle()
+        // 接近 90° 时略微淡出增加立体感
+        p.alpha = (255 * (1f - angle / 90f * 0.35f)).toInt().coerceIn(0, 255)
+        canvas.drawBitmap(bmp, m, p)
+        canvas.restore()
+
+        bmp.recycle()
     }
 }

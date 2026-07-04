@@ -35,7 +35,7 @@ class FloatBallService : Service() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     companion object {
-        const val BALL_SIZE_DP = 46
+        const val BALL_SIZE_DP = 38
         const val LONG_PRESS_MS = 600L
         const val DRAG_THRESHOLD = 10f
     }
@@ -72,8 +72,8 @@ class FloatBallService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = screenW - dp(BALL_SIZE_DP) - dp(8)  // 默认右边缘
-            y = 280
+            x = screenW - dp(BALL_SIZE_DP) - dp(4)  // 紧贴右边缘
+            y = 300
         }
 
         ballView.setOnTouchListener { _, event -> handleTouch(event); true }
