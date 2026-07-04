@@ -98,8 +98,9 @@ class FlipClockView(context: Context) : View(context) {
         val halfH = cardH / 2f
 
         // ─── 下半（静态）───────────────────────────────────────────────────────
-        // 前半程显示 prev 的下半，后半程显示 cur 的下半
-        val botLabel = if (prog < 0.5f) prev else cur
+        // 静止(prog==0)和动画后半程(prog>=0.5)：显示 cur 的下半
+        // 动画前半程(0<prog<0.5)：显示 prev 的下半（旧数字还没翻走）
+        val botLabel = if (prog > 0f && prog < 0.5f) prev else cur
         drawBottom(canvas, botLabel, x, y)
 
         // ─── 上半静态 ─────────────────────────────────────────────────────────
