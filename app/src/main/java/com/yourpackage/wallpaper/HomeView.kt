@@ -37,6 +37,9 @@ class HomeView(context: Context) : View(context) {
     data class DockApp(val label: String, val packageName: String, val icon: Drawable?)
 
     private val dockApps = mutableListOf<DockApp>()
+    private val dockManager = DockManager(context)
+    private var longPressIdx = -1
+    private var longPressRunnable: Runnable? = null
     private var wallpaperBitmap: Bitmap? = null
     private var pressedDockIdx = -1
     private var wallBtnPressed = false
@@ -96,9 +99,20 @@ class HomeView(context: Context) : View(context) {
 
         var fallbackIdx = 0  // 兜底App轮流填充
 
-        for ((label, pkgs) in slots) {
-            if (label == "应用") { dockApps.add(DockApp("应用","__all__",null)); continue }
-            // 先找指定包名
+        slots.forEachIndexed { slotIdx, pair ->
+            val (label, pkgs) = pair
+            if (label == "应用") { dockApps.add(DockApp("应用","__all__",null)); return@forEachIndexed }
+
+            // 优先读取用户自定义配置
+            val custom = dockManager.loadSlot(slotIdx)
+            if (custom != null) {
+                val (pkg, lbl) = custom
+                val icon = try { pm.getApplicationIcon(pkg) } catch (e: Exception) { null }
+                dockApps.add(DockApp(lbl.ifBlank { label }, pkg, icon))
+                return@forEachIndexed
+            }
+
+            // 无自定义时用默认包名
             val found = pkgs.firstOrNull { pkg ->
                 try { pm.getApplicationInfo(pkg, 0); true } catch (e: Exception) { false }
             }
@@ -106,7 +120,6 @@ class HomeView(context: Context) : View(context) {
                 val icon = try { pm.getApplicationIcon(found) } catch (e: Exception) { null }
                 dockApps.add(DockApp(label, found, icon))
             } else {
-                // 指定包名找不到，从系统App列表取一个兜底
                 val fallback = allApps.getOrNull(fallbackIdx++)
                 if (fallback != null) {
                     val pkg  = fallback.activityInfo.packageName
@@ -164,16 +177,52 @@ class HomeView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 pressedDockIdx = getDockIdx(x, y)
                 wallBtnPressed = rf(BTN_WALL_L, BTN_WALL_T, BTN_WALL_R, BTN_WALL_B).contains(x, y)
+                // 长按检测（600ms）
+                if (pressedDockIdx >= 0) {
+                    val idx = pressedDockIdx
+                    val lp = Runnable {
+                        longPressIdx = idx
+                        pressedDockIdx = -1
+                        invalidate()
+                        showDockPicker(idx)
+                    }
+                    longPressRunnable = lp
+                    handler.postDelayed(lp, 600)
+                }
                 invalidate()
             }
+            MotionEvent.ACTION_MOVE -> {
+                // 移动超过阈值取消长按
+                val di = getDockIdx(x, y)
+                if (di != pressedDockIdx) {
+                    longPressRunnable?.let { handler.removeCallbacks(it) }
+                    longPressRunnable = null
+                }
+            }
             MotionEvent.ACTION_UP -> {
+                longPressRunnable?.let { handler.removeCallbacks(it) }
+                longPressRunnable = null
                 val di = getDockIdx(x, y)
                 if (di >= 0 && di == pressedDockIdx) launchDockApp(di)
                 if (rf(BTN_WALL_L, BTN_WALL_T, BTN_WALL_R, BTN_WALL_B).contains(x, y) && wallBtnPressed)
                     openWallpaperPicker()
                 pressedDockIdx = -1; wallBtnPressed = false; invalidate()
             }
-            MotionEvent.ACTION_CANCEL -> { pressedDockIdx = -1; wallBtnPressed = false; invalidate() }
+            MotionEvent.ACTION_CANCEL -> {
+                longPressRunnable?.let { handler.removeCallbacks(it) }
+                longPressRunnable = null
+                pressedDockIdx = -1; wallBtnPressed = false; invalidate()
+            }
+        }
+    }
+
+    private fun showDockPicker(slotIdx: Int) {
+        dockManager.showPicker(slotIdx) { pkg, label, icon ->
+            // 更新对应槽位
+            if (slotIdx < dockApps.size) {
+                dockApps[slotIdx] = DockApp(label, pkg, icon)
+                invalidate()
+            }
         }
     }
 
