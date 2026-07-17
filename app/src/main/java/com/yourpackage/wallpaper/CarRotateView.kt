@@ -3,7 +3,6 @@ package com.yourpackage.wallpaper
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -29,22 +28,10 @@ class CarRotateView(context: Context) : View(context) {
     private var flingAnimator: ValueAnimator? = null
     private var showHint = true
 
-    private val gestureDetector = GestureDetector(context,
-        object : GestureDetector.SimpleOnGestureListener() {
-            override fun onScroll(e1: MotionEvent?, e2: MotionEvent,
-                                  distanceX: Float, distanceY: Float): Boolean {
-                flingAnimator?.cancel()
-                rotAngle = (rotAngle - distanceX * 0.35f + 360f) % 360f
-                showHint = false
-                invalidate()
-                return true
-            }
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent,
-                                 velocityX: Float, velocityY: Float): Boolean {
-                startFling(-velocityX * 0.12f)
-                return true
-            }
-        })
+    // 用成员变量记录触摸状态，手动实现滑动/惯性，避免GestureDetector API版本问题
+    private var lastTouchX = 0f
+    private var lastVelocityX = 0f
+    private var touchDown = false
 
     private fun startFling(delta: Float) {
         flingAnimator?.cancel()
@@ -61,7 +48,28 @@ class CarRotateView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(event)
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                flingAnimator?.cancel()
+                lastTouchX = event.x
+                lastVelocityX = 0f
+                touchDown = true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (touchDown) {
+                    val dx = event.x - lastTouchX
+                    lastVelocityX = dx
+                    rotAngle = (rotAngle - dx * 0.35f + 360f) % 360f
+                    lastTouchX = event.x
+                    showHint = false
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                touchDown = false
+                startFling(-lastVelocityX * 3.5f)
+            }
+        }
         return true
     }
 
