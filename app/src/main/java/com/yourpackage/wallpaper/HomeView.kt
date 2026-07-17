@@ -46,6 +46,8 @@ class HomeView(context: Context) : View(context) {
 
     // 翻页时钟
     val flipClock = FlipClockView(context)
+    // 汽车旋转展示
+    val carView = CarRotateView(context)
 
     private val bmpPaint     = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val dockBgPaint  = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -171,8 +173,30 @@ class HomeView(context: Context) : View(context) {
         return s
     }
 
+    // 汽车旋转区域范围（右侧 42%，状态栏到Dock之间）
+    private fun isInCarArea(x: Float, y: Float): Boolean {
+        val carAreaX = width * 0.58f
+        val clockTop = dy(STATUS_H)
+        val clockBot = dy(DOCK_TOP) - dy(36f)
+        return x >= carAreaX && y >= clockTop && y <= clockBot
+    }
+
     private fun handleTouch(ev: MotionEvent) {
         val x = ev.x; val y = ev.y
+
+        // 汽车区域触摸路由
+        if (isInCarArea(x, y)) {
+            val carAreaX = width * 0.58f
+            val clockTop = dy(STATUS_H)
+            val translated = MotionEvent.obtain(ev).apply {
+                offsetLocation(-carAreaX, -clockTop)
+            }
+            carView.onTouchEvent(translated)
+            translated.recycle()
+            if (ev.action == MotionEvent.ACTION_DOWN ||
+                ev.action == MotionEvent.ACTION_MOVE) return
+        }
+
         when (ev.action) {
             MotionEvent.ACTION_DOWN -> {
                 pressedDockIdx = getDockIdx(x, y)
@@ -266,6 +290,7 @@ class HomeView(context: Context) : View(context) {
         drawBackground(canvas)
         drawStatusBar(canvas)
         drawFlipClock(canvas)
+        drawCarView(canvas)
         drawDateBelow(canvas)
         drawDock(canvas)
         drawWallpaperButton(canvas)
@@ -294,12 +319,12 @@ class HomeView(context: Context) : View(context) {
         statusPaint.textSize = dy(24f)
     }
 
-    /** 把 FlipClockView 的内容绘制到中央区域 */
+    /** 把 FlipClockView 的内容绘制到左半区域 */
     private fun drawFlipClock(canvas: Canvas) {
         val clockTop = dy(STATUS_H)
-        // 底部留出日期文字高度（约30px设计坐标）和Dock间距
         val clockBot = dy(DOCK_TOP) - dy(36f)
-        val w = width
+        // 时钟占左边 58% 宽度，右边留给汽车展示
+        val w = (width * 0.58f).toInt().coerceAtLeast(1)
         val h = (clockBot - clockTop).toInt().coerceAtLeast(1)
         canvas.save()
         canvas.translate(0f, clockTop)
@@ -311,6 +336,29 @@ class HomeView(context: Context) : View(context) {
             flipClock.layout(0, 0, w, h)
         }
         flipClock.draw(canvas)
+        canvas.restore()
+    }
+
+    /** 汽车旋转展示（右半区域）*/
+    private fun drawCarView(canvas: Canvas) {
+        val clockTop = dy(STATUS_H)
+        val clockBot = dy(DOCK_TOP) - dy(36f)
+        // 汽车展示区域：右半屏，与时钟并排
+        val carAreaW = (width * 0.42f).toInt().coerceAtLeast(1)
+        val carAreaH = (clockBot - clockTop).toInt().coerceAtLeast(1)
+        val carAreaX = width - carAreaW
+
+        if (carView.width != carAreaW || carView.height != carAreaH) {
+            carView.measure(
+                MeasureSpec.makeMeasureSpec(carAreaW, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(carAreaH, MeasureSpec.EXACTLY)
+            )
+            carView.layout(0, 0, carAreaW, carAreaH)
+        }
+
+        canvas.save()
+        canvas.translate(carAreaX.toFloat(), clockTop)
+        carView.draw(canvas)
         canvas.restore()
     }
 
