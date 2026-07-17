@@ -46,8 +46,6 @@ class HomeView(context: Context) : View(context) {
 
     // 翻页时钟
     val flipClock = FlipClockView(context)
-    // 汽车旋转展示
-    val carView = CarRotateView(context)
 
     private val bmpPaint     = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val dockBgPaint  = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -290,7 +288,6 @@ class HomeView(context: Context) : View(context) {
         drawBackground(canvas)
         drawStatusBar(canvas)
         drawFlipClock(canvas)
-        drawCarView(canvas)
         drawDateBelow(canvas)
         drawDock(canvas)
         drawWallpaperButton(canvas)
@@ -338,28 +335,6 @@ class HomeView(context: Context) : View(context) {
         canvas.restore()
     }
 
-    /** 汽车旋转展示（叠加在时钟右侧，不影响时钟布局）*/
-    private fun drawCarView(canvas: Canvas) {
-        val clockTop = dy(STATUS_H)
-        val clockBot = dy(DOCK_TOP) - dy(36f)
-        // 汽车展示：右侧40%，垂直居中在时钟区域，不遮挡时钟数字
-        val carAreaW = (width * 0.38f).toInt().coerceAtLeast(1)
-        val carAreaH = (clockBot - clockTop).toInt().coerceAtLeast(1)
-        val carAreaX = width - carAreaW
-
-        if (carView.width != carAreaW || carView.height != carAreaH) {
-            carView.measure(
-                MeasureSpec.makeMeasureSpec(carAreaW, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(carAreaH, MeasureSpec.EXACTLY)
-            )
-            carView.layout(0, 0, carAreaW, carAreaH)
-        }
-
-        canvas.save()
-        canvas.translate(carAreaX.toFloat(), clockTop)
-        carView.draw(canvas)
-        canvas.restore()
-    }
 
     /** 翻页时钟下方日期文字 */
     private fun drawDateBelow(canvas: Canvas) {
@@ -374,7 +349,7 @@ class HomeView(context: Context) : View(context) {
 
     private fun drawDock(canvas: Canvas) {
         val dockRect = rf(DOCK_LEFT, DOCK_TOP, DOCK_RIGHT, DOCK_BOTTOM)
-        dockBgPaint.color = Color.argb(160, 10, 10, 10)
+        dockBgPaint.color = Color.argb(100, 10, 10, 10)
         canvas.drawRoundRect(dockRect, dy(DOCK_RADIUS), dy(DOCK_RADIUS), dockBgPaint)
         val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE; strokeWidth = dy(1.5f)

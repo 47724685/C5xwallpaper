@@ -83,8 +83,8 @@ class FlipClockView(context: Context) : LinearLayout(context) {
 
     inner class FlipCard(ctx: Context) : FrameLayout(ctx) {
 
-        private val C_TOP = Color.argb(195, 46, 46, 46)
-        private val C_BOT = Color.argb(178, 32, 32, 32)
+        private val C_TOP = Color.argb(130, 46, 46, 46)
+        private val C_BOT = Color.argb(115, 32, 32, 32)
         private val C_DIV = Color.rgb(6, 6, 6)
 
         // 静态层：始终显示当前值
