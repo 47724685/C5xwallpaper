@@ -38,6 +38,30 @@ class HomeView(context: Context) : View(context) {
 
     private val dockApps = mutableListOf<DockApp>()
     private val dockManager = DockManager(context)
+
+    // ── 音乐/歌词 ─────────────────────────────────────────────────────────────
+    private val musicMonitor = MusicMonitor(context)
+    private var currentMusic: MusicMonitor.MusicInfo? = null
+    private var lrcLines: List<LrcParser.LrcLine> = emptyList()
+    private var lastLrcTitle = ""
+
+    // 歌词显示 Paint
+    private val lrcBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(100, 10, 10, 10)
+    }
+    private val lrcTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+    }
+    private val lrcLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(220, 240, 240, 240)
+        textAlign = Paint.Align.CENTER
+    }
+    private val lrcDimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(140, 180, 180, 180)
+        textAlign = Paint.Align.CENTER
+    }
     private var longPressIdx = -1
     private var longPressRunnable: Runnable? = null
     private var wallpaperBitmap: Bitmap? = null
@@ -73,6 +97,21 @@ class HomeView(context: Context) : View(context) {
         loadDockApps()
         handler.post(clockTick)
         setOnTouchListener { _, ev -> handleTouch(ev); true }
+
+        // 启动音乐监听
+        musicMonitor.setOnMusicChanged { info ->
+            currentMusic = info
+            if (info != null && info.title != lastLrcTitle) {
+                lastLrcTitle = info.title
+                // 异步加载 LRC
+                Thread {
+                    lrcLines = LrcParser.findAndParse(info.title, info.artist)
+                }.start()
+            }
+            if (info == null) lrcLines = emptyList()
+            invalidate()
+        }
+        musicMonitor.start()
     }
 
     private fun loadDockApps() {
@@ -171,29 +210,10 @@ class HomeView(context: Context) : View(context) {
         return s
     }
 
-    // 汽车旋转区域范围（右侧 38%，状态栏到Dock之间）
-    private fun isInCarArea(x: Float, y: Float): Boolean {
-        val carAreaX = width * 0.62f
-        val clockTop = dy(STATUS_H)
-        val clockBot = dy(DOCK_TOP) - dy(36f)
-        return x >= carAreaX && y >= clockTop && y <= clockBot
-    }
 
     private fun handleTouch(ev: MotionEvent) {
         val x = ev.x; val y = ev.y
 
-        // 汽车区域触摸路由
-        if (isInCarArea(x, y)) {
-            val carAreaX = width * 0.62f
-            val clockTop = dy(STATUS_H)
-            val translated = MotionEvent.obtain(ev).apply {
-                offsetLocation(-carAreaX, -clockTop)
-            }
-            carView.onTouchEvent(translated)
-            translated.recycle()
-            if (ev.action == MotionEvent.ACTION_DOWN ||
-                ev.action == MotionEvent.ACTION_MOVE) return
-        }
 
         when (ev.action) {
             MotionEvent.ACTION_DOWN -> {
@@ -279,6 +299,9 @@ class HomeView(context: Context) : View(context) {
         statusPaint.textSize  = dy(24f)
         datePaint.textSize    = dy(22f)
         wallBtnTxtP.textSize  = dy(20f)
+        lrcTitlePaint.textSize = dy(18f)
+        lrcLinePaint.textSize  = dy(20f)
+        lrcDimPaint.textSize   = dy(18f)
         // 翻页时钟铺满中央区域（状态栏下方到Dock上方）
         flipClock.layout(0, dy(STATUS_H).toInt(), w, dy(DOCK_TOP).toInt())
         reloadWallpaper()
@@ -289,6 +312,7 @@ class HomeView(context: Context) : View(context) {
         drawStatusBar(canvas)
         drawFlipClock(canvas)
         drawDateBelow(canvas)
+        drawLyricBar(canvas)
         drawDock(canvas)
         drawWallpaperButton(canvas)
     }
@@ -347,6 +371,62 @@ class HomeView(context: Context) : View(context) {
         canvas.drawText(dateFmt.format(now.time), width / 2f, dateY, datePaint)
     }
 
+    /**
+     * 歌词条：显示在 Dock 栏上方
+     * 有 LRC 时显示当前行+上下相邻行（3行滚动效果）
+     * 无 LRC 时只显示歌曲名+歌手
+     */
+    private fun drawLyricBar(canvas: Canvas) {
+        val music = currentMusic ?: return   // 没有播放中的音乐，不显示
+
+        // 歌词条高度和位置：Dock 上方，紧贴 Dock
+        val barH   = dy(52f)
+        val barTop = dy(DOCK_TOP) - barH - dy(4f)
+        val barL   = dx(DOCK_LEFT)
+        val barR   = dx(DOCK_RIGHT)
+        val barW   = barR - barL
+
+        // 背景
+        canvas.drawRoundRect(
+            RectF(barL, barTop, barR, barTop + barH),
+            dy(12f), dy(12f), lrcBgPaint
+        )
+
+        val centerX = (barL + barR) / 2f
+        val centerY = barTop + barH / 2f
+
+        if (lrcLines.isEmpty()) {
+            // 无 LRC：显示 "歌曲名 - 歌手"
+            val info = "${music.title}  —  ${music.artist}"
+            lrcTitlePaint.textSize = dy(19f)
+            canvas.drawText(info, centerX, centerY + dy(7f), lrcTitlePaint)
+        } else {
+            // 有 LRC：显示当前行±1行
+            val pos = musicMonitor.getCurrentPosition()
+            val idx = LrcParser.getCurrentLine(lrcLines, pos)
+
+            val prevText = if (idx > 0) lrcLines[idx - 1].text else ""
+            val curText  = if (idx >= 0) lrcLines[idx].text else ""
+            val nextText = if (idx < lrcLines.size - 1) lrcLines[idx + 1].text else ""
+
+            // 三行：上（暗）/ 中（亮）/ 下（暗）
+            // 因为条高只有52dp，只显示当前行和歌曲名
+            lrcLinePaint.textSize  = dy(20f)
+            lrcDimPaint.textSize   = dy(15f)
+            lrcTitlePaint.textSize = dy(14f)
+
+            // 上方小字：歌曲名 - 歌手（作为标题）
+            lrcDimPaint.color = Color.argb(140, 180, 180, 180)
+            canvas.drawText(
+                "${music.title} · ${music.artist}",
+                centerX, barTop + dy(15f), lrcDimPaint
+            )
+            // 中间大字：当前歌词行
+            lrcLinePaint.color = Color.WHITE
+            canvas.drawText(curText, centerX, barTop + dy(38f), lrcLinePaint)
+        }
+    }
+
     private fun drawDock(canvas: Canvas) {
         val dockRect = rf(DOCK_LEFT, DOCK_TOP, DOCK_RIGHT, DOCK_BOTTOM)
         dockBgPaint.color = Color.argb(100, 10, 10, 10)
@@ -400,6 +480,7 @@ class HomeView(context: Context) : View(context) {
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         handler.removeCallbacks(clockTick)
+        musicMonitor.stop()
         wallpaperBitmap?.recycle()
     }
 }

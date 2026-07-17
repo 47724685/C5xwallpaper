@@ -14,6 +14,7 @@
     <!-- priv-app 特权权限：放进 /system/priv-app/ 后自动授予 -->
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL" />
 
     <uses-sdk
         android:minSdkVersion="19"
