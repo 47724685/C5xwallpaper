@@ -95,6 +95,21 @@ object LrcParser {
         }.toList()
     }
 
+    /** 从字符串内容解析 LRC（供在线歌词使用）*/
+    fun parseFromString(content: String): List<LrcLine> {
+        return try {
+            val lines = mutableListOf<LrcLine>()
+            content.lines().forEach { line ->
+                parseTimeTags(line).forEach { timeMs ->
+                    val text = line.substringAfterLast("]").trim()
+                    if (text.isNotEmpty()) lines.add(LrcLine(timeMs, text))
+                }
+            }
+            lines.sortBy { it.timeMs }
+            lines
+        } catch (e: Exception) { emptyList() }
+    }
+
     /**
      * 根据当前播放位置找到对应的歌词行索引
      * 返回当前行和下一行（用于滚动过渡）

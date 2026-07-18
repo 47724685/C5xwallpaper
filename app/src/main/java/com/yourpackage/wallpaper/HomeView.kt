@@ -40,10 +40,28 @@ class HomeView(context: Context) : View(context) {
     private val dockManager = DockManager(context)
 
     // ── 音乐/歌词 ─────────────────────────────────────────────────────────────
-    private val musicMonitor = MusicMonitor(context)
-    private var currentMusic: MusicMonitor.MusicInfo? = null
     private var lrcLines: List<LrcParser.LrcLine> = emptyList()
     private var lastLrcTitle = ""
+    // 轮询间隔：歌词每200ms更新一次（跟随播放位置）
+    private val lrcPollRunnable = object : Runnable {
+        override fun run() {
+            // 双通道：优先 NotificationListener，降级到 MediaSession 轮询
+            if (MusicNotificationListener.currentTitle.isEmpty()) {
+                MusicNotificationListener.pollMediaSession(context)
+            }
+            // 检查歌曲是否切换，切换则重新加载LRC
+            val title = MusicNotificationListener.currentTitle
+            if (title.isNotEmpty() && title != lastLrcTitle) {
+                lastLrcTitle = title
+                val artist = MusicNotificationListener.currentArtist
+                Thread {
+                    lrcLines = LrcParser.findAndParse(title, artist)
+                }.start()
+            }
+            invalidate()
+            handler.postDelayed(this, 200)
+        }
+    }""
 
     // 歌词显示 Paint
     private val lrcBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -98,20 +116,23 @@ class HomeView(context: Context) : View(context) {
         handler.post(clockTick)
         setOnTouchListener { _, ev -> handleTouch(ev); true }
 
-        // 启动音乐监听
-        musicMonitor.setOnMusicChanged { info ->
-            currentMusic = info
-            if (info != null && info.title != lastLrcTitle) {
-                lastLrcTitle = info.title
-                // 异步加载 LRC
-                Thread {
-                    lrcLines = LrcParser.findAndParse(info.title, info.artist)
-                }.start()
+        // 启动歌词轮询（200ms更新）
+        MusicNotificationListener.onChanged = {
+            val title = MusicNotificationListener.currentTitle
+            if (title != lastLrcTitle) {
+                lastLrcTitle = title
+                if (title.isEmpty()) {
+                    lrcLines = emptyList()
+                } else {
+                    Thread {
+                        lrcLines = LrcParser.findAndParse(
+                            title, MusicNotificationListener.currentArtist)
+                    }.start()
+                }
             }
-            if (info == null) lrcLines = emptyList()
             invalidate()
         }
-        musicMonitor.start()
+        handler.postDelayed(lrcPollRunnable, 1000)
     }
 
     private fun loadDockApps() {
@@ -377,7 +398,10 @@ class HomeView(context: Context) : View(context) {
      * 无 LRC 时只显示歌曲名+歌手
      */
     private fun drawLyricBar(canvas: Canvas) {
-        val music = currentMusic ?: return   // 没有播放中的音乐，不显示
+        // 没有播放中的音乐，不显示
+        val title = MusicNotificationListener.currentTitle
+        if (title.isEmpty()) return
+        val artist = MusicNotificationListener.currentArtist
 
         // 歌词条高度和位置：Dock 上方，紧贴 Dock
         val barH   = dy(52f)
@@ -397,12 +421,12 @@ class HomeView(context: Context) : View(context) {
 
         if (lrcLines.isEmpty()) {
             // 无 LRC：显示 "歌曲名 - 歌手"
-            val info = "${music.title}  —  ${music.artist}"
+            val info = "$title  —  $artist"
             lrcTitlePaint.textSize = dy(19f)
             canvas.drawText(info, centerX, centerY + dy(7f), lrcTitlePaint)
         } else {
             // 有 LRC：显示当前行±1行
-            val pos = musicMonitor.getCurrentPosition()
+            val pos = MusicNotificationListener.positionMs
             val idx = LrcParser.getCurrentLine(lrcLines, pos)
 
             val prevText = if (idx > 0) lrcLines[idx - 1].text else ""
@@ -418,7 +442,7 @@ class HomeView(context: Context) : View(context) {
             // 上方小字：歌曲名 - 歌手（作为标题）
             lrcDimPaint.color = Color.argb(140, 180, 180, 180)
             canvas.drawText(
-                "${music.title} · ${music.artist}",
+                "$title · $artist",
                 centerX, barTop + dy(15f), lrcDimPaint
             )
             // 中间大字：当前歌词行
@@ -480,7 +504,7 @@ class HomeView(context: Context) : View(context) {
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         handler.removeCallbacks(clockTick)
-        musicMonitor.stop()
+        handler.removeCallbacks(lrcPollRunnable)
         wallpaperBitmap?.recycle()
     }
 }
