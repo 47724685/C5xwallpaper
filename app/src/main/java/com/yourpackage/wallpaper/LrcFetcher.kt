@@ -17,7 +17,6 @@ object LrcFetcher {
               onResult: (List<LrcParser.LrcLine>) -> Unit) {
         val key = "$title|$artist"
         cache[key]?.let { onResult(it); return }
-
         Thread {
             val lines = fetchKuwo(title, artist)
                 ?: fetchWangYiYun(title, artist)
@@ -29,37 +28,43 @@ object LrcFetcher {
 
     private fun fetchKuwo(title: String, artist: String): List<LrcParser.LrcLine>? {
         return try {
-            val query = URLEncoder.encode("$title $artist", "UTF-8")
-            val searchUrl = "http://search.kuwo.cn/r.s?all=$query&ft=music&" +
+            val q = URLEncoder.encode("$title $artist", "UTF-8")
+            val searchUrl = "http://search.kuwo.cn/r.s?all=$q&ft=music&" +
                 "rformat=json&encoding=utf8&ver=mbox&vipver=MUSIC_8.7.7.0_BCS37&" +
                 "cluster=0&itemset=web_2013&news=0&pn=0&rn=1&uid=0&devid=0&" +
                 "plat=pc&format=json"
             val searchResp = httpGet(searchUrl) ?: return null
 
-            val ridMatch = Regex(""""MUSICRID":"MUSIC_(\d+)"""").find(searchResp)
-                ?: Regex(""""id":(\d+)""").find(searchResp)
-            val rid = ridMatch?.groupValues?.get(1) ?: return null
+            // 提取歌曲ID
+            val ridRegex = Regex(""""MUSICRID":"MUSIC_(\d+)"""")
+            val idRegex  = Regex(""""id":(\d+)""")
+            val rid = (ridRegex.find(searchResp) ?: idRegex.find(searchResp))
+                ?.groupValues?.get(1) ?: return null
 
             val lrcUrl = "http://m.kuwo.cn/newh5/singles/songinfoandlrc?" +
                 "musicId=$rid&httpsStatus=1&reqId=0"
             val lrcResp = httpGet(lrcUrl) ?: return null
-
             parseLrcFromKuwoJson(lrcResp)
         } catch (e: Exception) { null }
     }
 
     private fun parseLrcFromKuwoJson(json: String): List<LrcParser.LrcLine>? {
         return try {
-            val pattern = Regex(""""lrclist"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL)
-            val listStr = pattern.find(json)?.groupValues?.get(1) ?: return null
+            val listRegex = Regex(""""lrclist"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL)
+            val listStr = listRegex.find(json)?.groupValues?.get(1) ?: return null
 
+            // 每个 item: {"time":"0.64","lineLyric":"xxx"}
+            val timeRegex = Regex(""""time"\s*:\s*"([^"]+)"""")
+            val lyricRegex = Regex(""""lineLyric"\s*:\s*"([^"]*)"""")
+
+            // 按 { } 分割每个条目
+            val items = listStr.split("},").filter { it.contains("time") }
             val result = mutableListOf<LrcParser.LrcLine>()
-            val itemPattern = Regex(""""time"\s*:\s*"([^"]+)"[^}]*?"lineLyric"\s*:\s*"([^"]*)"")
-            itemPattern.findAll(listStr).forEach { m ->
-                val timeSec = m.groupValues[1].toDoubleOrNull() ?: return@forEach
-                val text = m.groupValues[2].trim()
+            for (item in items) {
+                val t = timeRegex.find(item)?.groupValues?.get(1)?.toDoubleOrNull() ?: continue
+                val text = lyricRegex.find(item)?.groupValues?.get(1)?.trim() ?: continue
                 if (text.isNotEmpty()) {
-                    result.add(LrcParser.LrcLine((timeSec * 1000).toLong(), text))
+                    result.add(LrcParser.LrcLine((t * 1000).toLong(), text))
                 }
             }
             if (result.isEmpty()) null else result.sortedBy { it.timeMs }
@@ -68,29 +73,46 @@ object LrcFetcher {
 
     private fun fetchWangYiYun(title: String, artist: String): List<LrcParser.LrcLine>? {
         return try {
-            val query = URLEncoder.encode("$title $artist", "UTF-8")
+            val q = URLEncoder.encode("$title $artist", "UTF-8")
             val searchUrl = "http://music.163.com/api/search/get?" +
-                "s=$query&type=1&offset=0&total=true&limit=1"
+                "s=$q&type=1&offset=0&total=true&limit=1"
             val searchResp = httpGet(searchUrl, mapOf(
                 "Referer" to "http://music.163.com/",
                 "Cookie" to "os=pc"
             )) ?: return null
 
-            val idMatch = Regex(""""id":(\d+),"name":""").find(searchResp)
-            val songId = idMatch?.groupValues?.get(1) ?: return null
+            // 提取歌曲ID
+            val songId = Regex(""""id":(\d+),"name":""")
+                .find(searchResp)?.groupValues?.get(1) ?: return null
 
             val lrcUrl = "http://music.163.com/api/song/lyric?id=$songId&lv=1&kv=1&tv=-1"
             val lrcResp = httpGet(lrcUrl, mapOf(
                 "Referer" to "http://music.163.com/"
             )) ?: return null
 
-            val lrcMatch = Regex(""""lyric"\s*:\s*"(.*?)"""",
-                setOf(RegexOption.DOT_MATCHES_ALL)).find(lrcResp)
-            val lrcContent = lrcMatch?.groupValues?.get(1)
-                ?.replace("\\n", "\n")
-                ?.replace("\\r", "")
-                ?: return null
-
+            // 提取 lyric 字段（避免三引号正则问题，用普通字符串）
+            val lyricStart = lrcResp.indexOf("\"lyric\":\"")
+            if (lyricStart < 0) return null
+            val contentStart = lyricStart + 9
+            // 找到结束引号（处理转义）
+            val sb = StringBuilder()
+            var i = contentStart
+            while (i < lrcResp.length) {
+                val c = lrcResp[i]
+                if (c == '\\' && i + 1 < lrcResp.length) {
+                    when (lrcResp[i + 1]) {
+                        'n'  -> { sb.append('\n'); i += 2; continue }
+                        'r'  -> { i += 2; continue }
+                        '"'  -> { sb.append('"'); i += 2; continue }
+                        '\\' -> { sb.append('\\'); i += 2; continue }
+                        else -> { sb.append(c); i++; continue }
+                    }
+                }
+                if (c == '"') break
+                sb.append(c)
+                i++
+            }
+            val lrcContent = sb.toString()
             val parsed = LrcParser.parseFromString(lrcContent)
             if (parsed.isEmpty()) null else parsed
         } catch (e: Exception) { null }
