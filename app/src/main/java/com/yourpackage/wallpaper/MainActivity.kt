@@ -30,9 +30,6 @@ class MainActivity : Activity() {
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // 启动悬浮球（桌面启动时自动开启）
-        startService(Intent(this, FloatBallService::class.java))
-
         val root = FrameLayout(this)
 
         homeView = HomeView(this)
